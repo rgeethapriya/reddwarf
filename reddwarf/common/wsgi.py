@@ -120,7 +120,7 @@ def versioned_urlmap(*args, **kwargs):
 
 
 def launch(app_name, port, paste_config_file, data={},
-           host='0.0.0.0', backlog=128, threads=1000):
+           host='0.0.0.0', backlog=128, threads=1000, workers=None):
     """Launches a wsgi server based on the passed in paste_config_file.
 
       Launch provides a easy way to create a paste app from the config
@@ -138,7 +138,7 @@ def launch(app_name, port, paste_config_file, data={},
     app = pastedeploy.paste_deploy_app(paste_config_file, app_name, data)
     server = openstack_wsgi.Service(app, port, host=host,
                                     backlog=backlog, threads=threads)
-    return service.launch(server)
+    return service.launch(server, workers)
 
 
 # Note: taken from Nova
@@ -376,6 +376,7 @@ class Controller(object):
             exception.BadValue,
             exception.DatabaseAlreadyExists,
             exception.UserAlreadyExists,
+            exception.LocalStorageNotSpecified,
         ],
         webob.exc.HTTPNotFound: [
             exception.NotFound,
@@ -397,6 +398,10 @@ class Controller(object):
         webob.exc.HTTPServerError: [
             exception.VolumeCreationFailure,
             exception.UpdateGuestError,
+        ],
+        webob.exc.HTTPNotImplemented: [
+            exception.VolumeNotSupported,
+            exception.LocalStorageNotSupported
         ],
     }
 
