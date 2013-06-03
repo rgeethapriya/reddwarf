@@ -18,20 +18,153 @@ from proboscis.asserts import assert_raises
 from proboscis import test
 from proboscis import SkipTest
 from proboscis.decorators import time_out
+
 from reddwarf.tests.util import poll_until
 from reddwarf.tests.util import test_config
-from reddwarfclient import exceptions
+from reddwarf import tests
+from reddwarf.tests import util
 from reddwarf.tests.api.instances import WaitForGuestInstallationToFinish
 from reddwarf.tests.api.instances import instance_info
+from reddwarf.tests.api.instances import GROUP_START
 from reddwarf.tests.api.instances import assert_unprocessable
 
+from reddwarfclient import exceptions
+# Define groups
 GROUP = "dbaas.api.backups"
+GROUP_POSITIVE = GROUP + ".positive"
+GROUP_NEGATIVE = GROUP + ".negative"
+# Define Globals
 BACKUP_NAME = 'backup_test'
-BACKUP_DESC = 'test description'
-
-
+BACKUP_DESC = 'test description for backup'
 backup_info = None
 restore_instance_id = None
+backup_name = None
+backup_desc = None
+
+databases = []
+users = []
+backup_resp = None
+
+
+@test(depends_on_classes=[WaitForGuestInstallationToFinish],
+      depends_on_groups=[GROUP_START],
+      groups=[GROUP])
+class BackupsBase(object):
+    """
+    Base class for Positive and Negative classes for test cases
+    """
+    def set_up(self):
+        self.dbaas = util.create_dbaas_client(instance_info.user)
+
+    def _create_backup(self, backup_name, backup_desc):
+        return instance_info.dbaas.backups.create(backup_name,
+                                                         instance_info.id,
+                                                         backup_desc)
+        # print dir(backup_resp)
+        # print backup_resp.status
+        # print backup_resp.locationRef
+        print dir(instance_info)
+        print instance_info.dbaas_flavor
+        print instance_info.dbaas_flavor_href
+        print instance_info.volume
+        print instance_info.user.tenant_id
+
+    def _create_restore(self):
+        # self.dbaas.instances.create(
+        #                     instance_info.name,
+        #                     instance_info.dbaas_flavor_href,
+        #                     instance_info.volume,
+        #                     databases,
+        #                     users,
+        #                     restorePoint=backup_id)
+        #instance_info.dbaas.instances.create(instance_info)
+        pass
+
+    @test
+    def _list_backups_by_tenant(self):
+        pass
+
+    @test
+    def _list_backups_by_instance(self):
+        pass
+
+    @test
+    def _delete_backup(self):
+        pass
+
+    @test
+    def _get_backup_status(self):
+        pass
+
+@test(depends_on_classes=[WaitForGuestInstallationToFinish],
+      groups=[GROUP_POSITIVE])
+class TestBackupPositive(object):
+
+    @test
+    def test_verify_backup(self):
+        pass
+
+    @test
+    def test_restore_backup(self):
+        pass
+
+    @test
+    def test_list_backups_for_tenant(self):
+        pass
+
+    @test
+    def test_list_backups_for_instance(self):
+        pass
+
+    @test
+    def test_list_backups_for_deleted_instance(self):
+        pass
+
+    @test
+    def test_get_backup_status_by_id(self):
+        pass
+
+    @test
+    def test_delete_backup(self):
+        pass
+
+@test(depends_on_classes=[WaitForGuestInstallationToFinish],
+      groups=[GROUP_NEGATIVE])
+class TestBackupNegativeive(object):
+
+    @test
+    def test_verify_backup_instance_not_active(self):
+        pass
+
+    @test
+    def test_restore_deleted_backup(self):
+        pass
+
+    @test
+    def test_restore_backup_account_not_owned(self):
+        pass
+
+    @test
+    def test_list_backups_account_not_owned(self):
+        pass
+
+    @test
+    def test_list_backups_for_instance_another_account(self):
+        pass
+
+    @test
+    def test_list_backups_for_deleted_instance(self):
+        pass
+
+    @test
+    def test_delete_deleted_backup(self):
+        pass
+
+    @test
+    def test_delete_backup_account_not_owned(self):
+        pass
+
+
 
 
 @test(depends_on_classes=[WaitForGuestInstallationToFinish],
@@ -50,6 +183,10 @@ class CreateBackups(object):
         result = instance_info.dbaas.backups.create(BACKUP_NAME,
                                                     instance_info.id,
                                                     BACKUP_DESC)
+        print "Instance Info DOT user looks like - "
+        print dir(instance_info.user)
+        print instance_info.user.tenant_id
+        print instance_info.user.tenant
         assert_equal(BACKUP_NAME, result.name)
         assert_equal(BACKUP_DESC, result.description)
         assert_equal(instance_info.id, result.instance_id)
@@ -67,7 +204,7 @@ class AfterBackupCreation(object):
     @test
     def test_instance_action_right_after_backup_create(self):
         """test any instance action while backup is running"""
-        assert_unprocessable(instance_info.dbaas.instances.resize_volume,
+        assert_unprocessable(instance_info.dbaas.instances.resize_instance,
                              instance_info.id, 1)
 
     @test
