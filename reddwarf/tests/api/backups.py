@@ -27,7 +27,7 @@ from reddwarf.tests.api.instances import WaitForGuestInstallationToFinish
 from reddwarf.tests.api.instances import instance_info
 from reddwarf.tests.api.instances import GROUP_START
 from reddwarf.tests.api.instances import assert_unprocessable
-
+from reddwarfclient import backups
 from reddwarfclient import exceptions
 # Define groups
 GROUP = "dbaas.api.backups"
@@ -53,7 +53,10 @@ class BackupsBase(object):
     """
     Base class for Positive and Negative classes for test cases
     """
-    def set_up(self):
+    #def set_up(self):
+    def __init__(self):
+        self.status = None
+        self.backup_id = None
         self.dbaas = util.create_dbaas_client(instance_info.user)
 
     def _create_backup(self, backup_name, backup_desc):
@@ -77,18 +80,24 @@ class BackupsBase(object):
     def _list_backups_by_instance(self):
         return instance_info.dbaas.instances.backups(instance_info.id)
 
-    def _delete_backup(self):
-        assert_equal(backup_info.id, None, "Backup ID is not found")
-        instance_info.dbaas.backups.delete(backup_info.id)
+    def _delete_backup(self, backup_id):
+        return instance_info.dbaas.backups.delete(backup_id)
 
-
-    def _get_backup_status(self):
-        pass
+    def _get_backup_status(self, backup_id):
+        return instance_info.dbaas.backups.get(backup_id).status
 
     def _verify_instance_is_active(self):
         result = instance_info.dbaas.instances.get(instance_info.id)
         print result.status
         return result.status == 'ACTIVE'
+
+    def _verify_instance_status(self, instance_id, status):
+        resp = instance_info.dbaas.instances.get(instance_id)
+        return resp.status == status
+
+    def _verify_backup_status(self, backupid, status):
+        resp = instance_info.dbaas.backups.get(backupid)
+        return resp.status == status
 
 
 @test(depends_on_classes=[WaitForGuestInstallationToFinish],
@@ -104,13 +113,34 @@ class TestBackupPositive(BackupsBase):
         assert_equal('NEW', result.status)
         instance = instance_info.dbaas.instances.list()[0]
         assert_equal('BACKUP', instance.status)
-        global backup_info
-        backup_info = result
+        self.backup_id = result.id
+        # global backup_info
+        # backup_info = result
         # print dir(backup_info)
+        # print dir(backup_info.id)
+        # print backup_info.id
         # print backup_info.locationRef
         # Timing necessary to make the error occur
-        poll_until(self._verify_instance_is_active, time_out=120,
-                   sleep_time=1)
+        #poll_until(self._verify_instance_is_active, time_out=120,
+        #           sleep_time=1)
+        print "Polling starts"
+        poll_until(lambda: self._verify_backup_status(self.backup_id, "NEW"),
+                   time_out=120, sleep_time=1)
+        print "After First Polling"
+        poll_until(lambda: self._verify_instance_status(instance_info.id,
+                   "BACKUP"), time_out=120, sleep_time=1)
+        print "After second Polling"
+        # poll_until(lambda: self._verify_backup_status(self.backup_id,
+        #             "BUILDING"), time_out=120, sleep_time=1)
+        print "After third Polling"
+        poll_until(lambda: self._verify_backup_status(self.backup_id,
+                    "COMPLETED"), time_out=120, sleep_time=1)
+        print "After fourth Polling"
+        poll_until(lambda: self._verify_instance_status(instance_info.id,
+                    "ACTIVE"), time_out=120, sleep_time=1)
+        # poll_until(self._verify_instance_is_active, time_out=120,
+        #            sleep_time=1)
+        print "After fifth Polling"
 
     @test
     def test_restore_backup(self):
@@ -123,10 +153,9 @@ class TestBackupPositive(BackupsBase):
         restore_info = restore_result
         global restore_instance_id
         restore_instance_id = restore_result.id
-        print dir(restore_info)
+        #print dir(restore_info)
 
-    @test(depends_on_classes=[BackupsBase],
-          runs_after=[test_verify_backup])
+    @test(runs_after=[test_verify_backup])
     def test_list_backups(self):
         result = self._list_backups()
         assert_equal(1, len(result))
@@ -134,12 +163,18 @@ class TestBackupPositive(BackupsBase):
         assert_equal(BACKUP_NAME, backup.name)
         assert_equal(BACKUP_DESC, backup.description)
         assert_equal(instance_info.id, backup.instance_id)
-        assert_equal('COMPLETED', backup.status)
+        #assert_equal('COMPLETED', backup.status)
         #print backup.status
 
-    @test
+    @test(runs_after=[test_verify_backup])
     def test_list_backups_for_instance(self):
-        pass
+        result = self._list_backups_by_instance()
+        assert_equal(1, len(result))
+        result = result[0]
+        assert_equal(BACKUP_NAME, result.name)
+        assert_equal(BACKUP_DESC, result.description)
+        assert_equal(instance_info.id, result.instance_id)
+
 
     @test
     def test_list_backups_for_deleted_instance(self):
@@ -149,25 +184,31 @@ class TestBackupPositive(BackupsBase):
     def test_get_backup_status_by_id(self):
         pass
 
-    @test
+    @test(runs_after=[test_verify_backup, test_list_backups,
+                      test_list_backups_for_instance])
     def test_delete_backup(self):
-        result = self._delete_backup()
+        print self.backup_id
+        self._delete_backup(self.backup_id)
         assert_equal(202, instance_info.dbaas.last_http_code)
         def backup_is_gone():
-            pass
-#             result = instance_info.dbaas.instances.backups(instance_info.id)
-#             if len(result) == 0:
-#                 return True
-#             else:
-#                 return False
-#         poll_until(backup_is_gone)
-#         assert_raises(exceptions.NotFound, instance_info.dbaas.backups.get,
-#                       backup_info.id)
+            result = None
+            try:
+                result = instance_info.dbaas.backups.get(self.backup_id)
+            except exceptions.NotFound:
+                assert_equal(result.status, "404",
+                             "Backup Resource not found)")
+            finally:
+                #print dir(result)
+                if result is None:
+                    return True
+                else:
+                    return False
+        poll_until(backup_is_gone)
 
 
 @test(depends_on_classes=[WaitForGuestInstallationToFinish],
       groups=[GROUP_NEGATIVE])
-class TestBackupNegativeive(object):
+class TestBackupNegative(object):
 
     @test
     def test_verify_backup_instance_not_active(self):
